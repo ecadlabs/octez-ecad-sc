@@ -12,12 +12,6 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-const (
-	defaultTimeout        = 30 * time.Second
-	defaultTolerance      = 1 * time.Second
-	defaultReconnectDelay = 10 * time.Second
-)
-
 type HeadMonitor struct {
 	Client         *client.Client
 	ChainID        *tz.ChainID
@@ -36,28 +30,7 @@ func (h *HeadMonitor) Status() bool {
 }
 
 func (h *HeadMonitor) context(ctx context.Context) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(ctx, h.timeout())
-}
-
-func (h *HeadMonitor) timeout() time.Duration {
-	if h.Timeout != 0 {
-		return h.Timeout
-	}
-	return defaultTimeout
-}
-
-func (h *HeadMonitor) tolerance() time.Duration {
-	if h.Tolerance != 0 {
-		return h.Tolerance
-	}
-	return defaultTolerance
-}
-
-func (h *HeadMonitor) reconnectDelay() time.Duration {
-	if h.ReconnectDelay != 0 {
-		return h.ReconnectDelay
-	}
-	return defaultReconnectDelay
+	return context.WithTimeout(ctx, h.Timeout)
 }
 
 func (h *HeadMonitor) getMinBlockDelay(c context.Context, block string, protocol *tz.ProtocolHash) (time.Duration, error) {
@@ -115,7 +88,7 @@ func (h *HeadMonitor) serve(ctx context.Context) {
 		h.status.Store(false)
 		if err != nil {
 			log.Error(err)
-			t := time.After(h.reconnectDelay())
+			t := time.After(h.ReconnectDelay)
 			select {
 			case <-t:
 			case <-ctx.Done():
@@ -183,7 +156,7 @@ func (h *HeadMonitor) serve(ctx context.Context) {
 				} else {
 					t = time.Now()
 				}
-				status := t.Before(timestamp.Add(minBlockDelay + h.tolerance()))
+				status := t.Before(timestamp.Add(minBlockDelay + h.Tolerance))
 				log.Debugf("%v: %t", t, status)
 				h.status.Store(status)
 				timestamp = t

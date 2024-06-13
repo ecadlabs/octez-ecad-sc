@@ -33,26 +33,40 @@ The purpose of the `/health` endpoint is to allow health check probes from load 
 ### Installation
 
 1. Clone the repository:
+
    ```bash
    git clone https://github.com/ecadlabs/octez-ecad-sc.git
    cd octez-ecad-sc
    ```
 
 2. Build the project:
+
    ```bash
    go build -o octez-ecad-sc
    ```
 
 3. Run the sidecar:
+
    ```bash
-   ./octez-ecad-sc --additional-time-window 10
+   ./octez-ecad-sc -c config.yaml
    ```
 
 ### Configuration
 
-The sidecar can be configured via command line flags:
+The sidecar can be configured via YAML file:
 
-- `--additional-time-window`: The amount of time added to the `minimal_block_delay` value for block observation (default: 10 seconds).
+| Field              | Default | Description                                                                       |
+| ------------------ | ------- | --------------------------------------------------------------------------------- |
+| listen             | :8080   | Host and port to listen on                                                        |
+| url                |         | Tezos RPC URL                                                                     |
+| chain_id           |         | Base58 encoded chain id                                                           |
+| timeout            | 30s     | RPC timeout                                                                       |
+| tolerance          | 10s     | The amount of time added to the `minimal_block_delay` value for block observation |
+| reconnect_delay    | 10s     | Delay before reconnection of a head monitor                                       |
+| use_timestamps     | false   | Use blocks' timestamps instead of a system time                                   |
+| check_block_delay  | true    |                                                                                   |
+| check_bootstrapped | true    |                                                                                   |
+| check_sync_state   | true    |                                                                                   |
 
 ### Reporting Issues
 

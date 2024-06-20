@@ -11,7 +11,7 @@ import (
 
 type HealthChecker struct {
 	Monitor *HeadMonitor
-	Client  *client.Client
+	Client  Client
 	ChainID *tz.ChainID
 	Timeout time.Duration
 

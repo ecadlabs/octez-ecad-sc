@@ -13,7 +13,7 @@ import (
 )
 
 type HeadMonitor struct {
-	Client         *client.Client
+	Client         Client
 	ChainID        *tz.ChainID
 	Timeout        time.Duration
 	Tolerance      time.Duration
@@ -176,6 +176,7 @@ func (h *HeadMonitor) serve(ctx context.Context) {
 					}
 					break Recv
 				}
+				log.WithFields(log.Fields{"block": head.Hash, "proto": proto.Protocol}).Info("protocol upgrade")
 				minBlockDelay, err = h.getMinBlockDelay(ctx, head.Hash.String(), proto.Protocol)
 				if err != nil {
 					if errors.Is(err, context.Canceled) {

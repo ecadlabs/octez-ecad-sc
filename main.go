@@ -25,6 +25,12 @@ const (
 	defaultReconnectDelay = 10 * time.Second
 )
 
+type debugLogger log.Logger
+
+func (l *debugLogger) Printf(format string, a ...any) {
+	(*log.Logger)(l).Debugf(format, a...)
+}
+
 func main() {
 	logLevel := flag.String("l", "info", "Log level: [error, warn, info, debug, trace]")
 	confPath := flag.String("c", "", "Config file path")
@@ -53,9 +59,12 @@ func main() {
 	if err := yaml.Unmarshal(buf, &conf); err != nil {
 		log.Fatal(err)
 	}
+	tmp, _ := json.MarshalIndent(&conf, "", "    ")
+	log.Info(string(tmp))
 
 	cl := client.Client{
-		URL: conf.URL,
+		URL:         conf.URL,
+		DebugLogger: (*debugLogger)(log.StandardLogger()),
 	}
 
 	mon := HeadMonitor{

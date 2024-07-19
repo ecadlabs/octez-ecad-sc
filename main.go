@@ -91,14 +91,48 @@ func main() {
 
 	r := mux.NewRouter()
 	r.Methods("GET").Path("/health").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		status, ok, err := checker.HealthStatus(r.Context())
+		status, err := checker.HealthStatus(r.Context())
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			fmt.Fprintf(w, "%v", err)
 			return
 		}
 		var code int
-		if ok {
+		if status.IsOk() {
+			code = http.StatusOK
+		} else {
+			code = http.StatusInternalServerError
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(code)
+		json.NewEncoder(w).Encode(status)
+	})
+	r.Methods("GET").Path("/sync_status").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		status, err := checker.HealthStatus(r.Context())
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, "%v", err)
+			return
+		}
+		var code int
+		if status.IsBootstrapped && status.IsSynced {
+			code = http.StatusOK
+		} else {
+			code = http.StatusInternalServerError
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(code)
+		json.NewEncoder(w).Encode(status)
+	})
+	r.Methods("GET").Path("/block_delay").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		status, err := checker.HealthStatus(r.Context())
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, "%v", err)
+			return
+		}
+		var code int
+		if status.BlockDelayOk {
 			code = http.StatusOK
 		} else {
 			code = http.StatusInternalServerError

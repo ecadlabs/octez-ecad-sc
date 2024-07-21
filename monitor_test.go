@@ -228,11 +228,11 @@ func TestProtocolUpgrade1(t *testing.T) {
 		},
 	}
 
-	mon := HeadMonitor{
+	mon := (&HeadMonitorConfig{
 		Client:        &cl,
 		ChainID:       &gotez.ChainID{0},
 		UseTimestamps: true,
-	}
+	}).New()
 
 	mon.Start()
 	<-cl.done

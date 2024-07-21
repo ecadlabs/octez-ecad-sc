@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -13,16 +12,19 @@ import (
 
 	"github.com/ecadlabs/gotez/v2/client"
 	"github.com/gorilla/mux"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
 	"gopkg.in/yaml.v3"
 )
 
 const (
-	defaultListen         = ":8080"
-	defaultTimeout        = 30 * time.Second
-	defaultTolerance      = 1 * time.Second
-	defaultReconnectDelay = 10 * time.Second
+	defaultListen                   = ":8080"
+	defaultTimeout                  = 30 * time.Second
+	defaultTolerance                = 1 * time.Second
+	defaultReconnectDelay           = 10 * time.Second
+	defaultBootstrappedPollInterval = 10 * time.Second
 )
 
 type debugLogger log.Logger
@@ -43,13 +45,13 @@ func main() {
 	log.SetLevel(ll)
 
 	conf := Config{
-		Listen:            defaultListen,
-		Timeout:           defaultTimeout,
-		Tolerance:         defaultTolerance,
-		ReconnectDelay:    defaultReconnectDelay,
-		CheckBlockDelay:   true,
-		CheckBootstrapped: true,
-		CheckSyncState:    true,
+		Listen:                   defaultListen,
+		Timeout:                  defaultTimeout,
+		Tolerance:                defaultTolerance,
+		ReconnectDelay:           defaultReconnectDelay,
+		HealthUseBlockDelay:      true,
+		HealthUseBootstrapped:    true,
+		BootstrappedPollInterval: defaultBootstrappedPollInterval,
 	}
 
 	buf, err := os.ReadFile(*confPath)
@@ -67,38 +69,45 @@ func main() {
 		DebugLogger: (*debugLogger)(log.StandardLogger()),
 	}
 
-	mon := HeadMonitor{
+	reg := prometheus.NewRegistry()
+
+	mon := (&HeadMonitorConfig{
 		Client:         &cl,
 		ChainID:        conf.ChainID,
 		Timeout:        conf.Timeout,
 		Tolerance:      conf.Tolerance,
 		ReconnectDelay: conf.ReconnectDelay,
 		UseTimestamps:  conf.UseTimestamps,
-	}
-	checker := HealthChecker{
-		Monitor:           &mon,
-		Client:            &cl,
-		ChainID:           conf.ChainID,
-		Timeout:           conf.Timeout,
-		CheckBlockDelay:   conf.CheckBlockDelay,
-		CheckBootstrapped: conf.CheckBootstrapped,
-		CheckSyncState:    conf.CheckSyncState,
-	}
-	if conf.CheckBlockDelay {
-		mon.Start()
-		defer mon.Stop(context.Background())
-	}
+		Reg:            reg,
+	}).New()
+
+	bs := (&BootstrapPollerConfig{
+		Client:   &cl,
+		ChainID:  conf.ChainID,
+		Timeout:  conf.Timeout,
+		Interval: conf.BootstrappedPollInterval,
+		Reg:      reg,
+	}).New()
+
+	mon.Start()
+	defer mon.Stop(context.Background())
+
+	bs.Start()
+	defer bs.Stop(context.Background())
 
 	r := mux.NewRouter()
 	r.Methods("GET").Path("/health").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		status, err := checker.HealthStatus(r.Context())
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			fmt.Fprintf(w, "%v", err)
-			return
+		status := true
+		if conf.HealthUseBootstrapped {
+			s := bs.Status()
+			status = status && s.Bootstrapped && s.SyncState == client.SyncStateSynced
 		}
+		if conf.HealthUseBlockDelay {
+			status = status && mon.Status()
+		}
+
 		var code int
-		if status.IsOk() {
+		if status {
 			code = http.StatusOK
 		} else {
 			code = http.StatusInternalServerError
@@ -108,14 +117,9 @@ func main() {
 		json.NewEncoder(w).Encode(status)
 	})
 	r.Methods("GET").Path("/sync_status").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		status, err := checker.HealthStatus(r.Context())
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			fmt.Fprintf(w, "%v", err)
-			return
-		}
+		status := bs.Status()
 		var code int
-		if status.IsBootstrapped && status.IsSynced {
+		if status.Bootstrapped && status.SyncState == client.SyncStateSynced {
 			code = http.StatusOK
 		} else {
 			code = http.StatusInternalServerError
@@ -125,14 +129,9 @@ func main() {
 		json.NewEncoder(w).Encode(status)
 	})
 	r.Methods("GET").Path("/block_delay").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		status, err := checker.HealthStatus(r.Context())
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			fmt.Fprintf(w, "%v", err)
-			return
-		}
+		status := mon.Status()
 		var code int
-		if status.BlockDelayOk {
+		if status {
 			code = http.StatusOK
 		} else {
 			code = http.StatusInternalServerError
@@ -141,6 +140,7 @@ func main() {
 		w.WriteHeader(code)
 		json.NewEncoder(w).Encode(status)
 	})
+	r.Methods("GET").Path("/metrics").Handler(promhttp.HandlerFor(reg, promhttp.HandlerOpts{Registry: reg}))
 	r.Use((&Logging{}).Handler)
 
 	srv := &http.Server{

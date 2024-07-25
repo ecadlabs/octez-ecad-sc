@@ -10,7 +10,9 @@ import (
 
 	"flag"
 
-	"github.com/ecadlabs/gotez/v2/client"
+	"github.com/ecadlabs/gotez/v2"
+	client "github.com/ecadlabs/gotez/v2/clientv2"
+	"github.com/ecadlabs/gotez/v2/clientv2/utils"
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -20,11 +22,11 @@ import (
 )
 
 const (
-	defaultListen                   = ":8080"
-	defaultTimeout                  = 30 * time.Second
-	defaultTolerance                = 1 * time.Second
-	defaultReconnectDelay           = 10 * time.Second
-	defaultBootstrappedPollInterval = 10 * time.Second
+	defaultListen         = ":8080"
+	defaultTimeout        = 30 * time.Second
+	defaultTolerance      = 1 * time.Second
+	defaultReconnectDelay = 10 * time.Second
+	defaultPollInterval   = 15 * time.Second
 )
 
 type debugLogger log.Logger
@@ -45,13 +47,13 @@ func main() {
 	log.SetLevel(ll)
 
 	conf := Config{
-		Listen:                   defaultListen,
-		Timeout:                  defaultTimeout,
-		Tolerance:                defaultTolerance,
-		ReconnectDelay:           defaultReconnectDelay,
-		HealthUseBlockDelay:      true,
-		HealthUseBootstrapped:    true,
-		BootstrappedPollInterval: defaultBootstrappedPollInterval,
+		Listen:                defaultListen,
+		Timeout:               defaultTimeout,
+		Tolerance:             defaultTolerance,
+		ReconnectDelay:        defaultReconnectDelay,
+		HealthUseBlockDelay:   true,
+		HealthUseBootstrapped: true,
+		PollInterval:          defaultPollInterval,
 	}
 
 	buf, err := os.ReadFile(*confPath)
@@ -71,7 +73,7 @@ func main() {
 
 	reg := prometheus.NewRegistry()
 
-	mon := (&HeadMonitorConfig{
+	hmon, err := (&HeadMonitorConfig{
 		Client:         &cl,
 		ChainID:        conf.ChainID,
 		Timeout:        conf.Timeout,
@@ -79,31 +81,49 @@ func main() {
 		ReconnectDelay: conf.ReconnectDelay,
 		UseTimestamps:  conf.UseTimestamps,
 		Reg:            reg,
+	}).New(context.Background())
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	nextProto := func() *gotez.ProtocolHash { _, p := hmon.Protocols(); return p }
+
+	mmon := (&MempoolMonitorConfig{
+		Client:           &cl,
+		ChainID:          conf.ChainID,
+		Timeout:          conf.Timeout,
+		ReconnectDelay:   conf.ReconnectDelay,
+		Reg:              reg,
+		NextProtocolFunc: nextProto,
 	}).New()
 
-	bs := (&BootstrapPollerConfig{
-		Client:   &cl,
-		ChainID:  conf.ChainID,
-		Timeout:  conf.Timeout,
-		Interval: conf.BootstrappedPollInterval,
-		Reg:      reg,
+	poller := (&PollerConfig{
+		Client:           &cl,
+		ChainID:          conf.ChainID,
+		Timeout:          conf.Timeout,
+		Interval:         conf.PollInterval,
+		Reg:              reg,
+		NextProtocolFunc: nextProto,
 	}).New()
 
-	mon.Start()
-	defer mon.Stop(context.Background())
+	hmon.Start()
+	defer hmon.Stop(context.Background())
 
-	bs.Start()
-	defer bs.Stop(context.Background())
+	poller.Start()
+	defer poller.Stop(context.Background())
+
+	mmon.Start()
+	defer mmon.Stop(context.Background())
 
 	r := mux.NewRouter()
 	r.Methods("GET").Path("/health").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		status := true
 		if conf.HealthUseBootstrapped {
-			s := bs.Status()
-			status = status && s.Bootstrapped && s.SyncState == client.SyncStateSynced
+			s := poller.Status()
+			status = status && s.Bootstrapped && s.SyncState == utils.SyncStateSynced
 		}
 		if conf.HealthUseBlockDelay {
-			status = status && mon.Status()
+			status = status && hmon.Status()
 		}
 
 		var code int
@@ -117,9 +137,9 @@ func main() {
 		json.NewEncoder(w).Encode(status)
 	})
 	r.Methods("GET").Path("/sync_status").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		status := bs.Status()
+		status := poller.Status()
 		var code int
-		if status.Bootstrapped && status.SyncState == client.SyncStateSynced {
+		if status.Bootstrapped && status.SyncState == utils.SyncStateSynced {
 			code = http.StatusOK
 		} else {
 			code = http.StatusInternalServerError
@@ -129,7 +149,7 @@ func main() {
 		json.NewEncoder(w).Encode(status)
 	})
 	r.Methods("GET").Path("/block_delay").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		status := mon.Status()
+		status := hmon.Status()
 		var code int
 		if status {
 			code = http.StatusOK

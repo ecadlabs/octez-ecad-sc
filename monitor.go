@@ -3,18 +3,20 @@ package main
 import (
 	"context"
 	"errors"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	tz "github.com/ecadlabs/gotez/v2"
-	"github.com/ecadlabs/gotez/v2/client"
+	client "github.com/ecadlabs/gotez/v2/clientv2"
+	"github.com/ecadlabs/gotez/v2/clientv2/block"
+	"github.com/ecadlabs/gotez/v2/clientv2/monitor"
 	"github.com/ecadlabs/gotez/v2/protocol/core"
 	"github.com/prometheus/client_golang/prometheus"
 	log "github.com/sirupsen/logrus"
 )
 
 type HeadMonitorConfig struct {
-	Client         Client
+	Client         *client.Client
 	ChainID        *tz.ChainID
 	Timeout        time.Duration
 	Tolerance      time.Duration
@@ -23,7 +25,7 @@ type HeadMonitorConfig struct {
 	Reg            prometheus.Registerer
 }
 
-func (c *HeadMonitorConfig) New() *HeadMonitor {
+func (c *HeadMonitorConfig) New(ctx context.Context) (*HeadMonitor, error) {
 	m := &HeadMonitor{
 		cfg: *c,
 		metric: prometheus.NewGauge(prometheus.GaugeOpts{
@@ -36,54 +38,73 @@ func (c *HeadMonitorConfig) New() *HeadMonitor {
 	if c.Reg != nil {
 		c.Reg.MustRegister(m.metric)
 	}
-	return m
+
+	bi, err := m.getBlockInfo(ctx, "head")
+	if err != nil {
+		return nil, err
+	}
+	m.protocol = bi.Protocol
+	m.nextProtocol = bi.NextProtocol
+
+	return m, nil
 }
 
 type HeadMonitor struct {
-	cfg    HeadMonitorConfig
-	status atomic.Bool
-	cancel context.CancelFunc
-	done   chan struct{}
-	metric prometheus.Gauge
+	cfg          HeadMonitorConfig
+	mtx          sync.RWMutex
+	status       bool
+	protocol     *tz.ProtocolHash
+	nextProtocol *tz.ProtocolHash
+	cancel       context.CancelFunc
+	done         chan struct{}
+	metric       prometheus.Gauge
 }
 
 func (h *HeadMonitor) Status() bool {
-	return h.status.Load()
+	h.mtx.RLock()
+	defer h.mtx.RUnlock()
+	return h.status
+}
+
+func (h *HeadMonitor) Protocols() (proto, next *tz.ProtocolHash) {
+	h.mtx.RLock()
+	defer h.mtx.RUnlock()
+	return h.protocol, h.nextProtocol
 }
 
 func (h *HeadMonitor) context(ctx context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(ctx, h.cfg.Timeout)
 }
 
-func (h *HeadMonitor) getMinBlockDelay(c context.Context, block string, protocol *tz.ProtocolHash) (time.Duration, error) {
+func (h *HeadMonitor) getMinBlockDelay(c context.Context, b string, protocol *tz.ProtocolHash) (time.Duration, error) {
 	ctx, cancel := h.context(c)
 	defer cancel()
-	consts, err := h.cfg.Client.Constants(ctx, &client.ContextRequest{
+	consts, err := block.Constants(ctx, h.cfg.Client, &block.ContextRequest{
 		Chain:    h.cfg.ChainID.String(),
-		Block:    block,
+		Block:    b,
 		Protocol: protocol,
 	})
 	if err != nil {
 		return 0, err
 	}
 	delay := time.Duration(consts.GetMinimalBlockDelay()) * time.Second
-	log.Debugf("%s delay = %v", block, delay)
+	log.Debugf("%s delay = %v", b, delay)
 	return delay, nil
 }
 
-func (h *HeadMonitor) getShellHeader(c context.Context, block *tz.BlockHash) (*core.ShellHeader, error) {
+func (h *HeadMonitor) getShellHeader(c context.Context, b *tz.BlockHash) (*core.ShellHeader, error) {
 	ctx, cancel := h.context(c)
 	defer cancel()
-	return h.cfg.Client.BlockShellHeader(ctx, &client.SimpleRequest{
+	return block.ShellHeader(ctx, h.cfg.Client, &block.SimpleRequest{
 		Chain: h.cfg.ChainID.String(),
-		Block: block.String(),
+		Block: b.String(),
 	})
 }
 
-func (h *HeadMonitor) getBlockInfo(c context.Context, block string) (*client.BasicBlockInfo, error) {
+func (h *HeadMonitor) getBlockInfo(c context.Context, b string) (*block.BasicBlockInfo, error) {
 	ctx, cancel := h.context(c)
 	defer cancel()
-	return h.cfg.Client.BasicBlockInfo(ctx, h.cfg.ChainID.String(), block)
+	return block.BasicInfo(ctx, h.cfg.Client, h.cfg.ChainID.String(), b)
 }
 
 func (h *HeadMonitor) Start() {
@@ -107,7 +128,9 @@ func (h *HeadMonitor) serve(ctx context.Context) {
 	defer close(h.done)
 	var err error
 	for {
-		h.status.Store(false)
+		h.mtx.Lock()
+		h.status = false
+		h.mtx.Unlock()
 		h.metric.Set(0)
 		if err != nil {
 			log.Error(err)
@@ -119,7 +142,7 @@ func (h *HeadMonitor) serve(ctx context.Context) {
 			}
 		}
 
-		var bi *client.BasicBlockInfo
+		var bi *block.BasicBlockInfo
 		bi, err = h.getBlockInfo(ctx, "head")
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
@@ -127,6 +150,10 @@ func (h *HeadMonitor) serve(ctx context.Context) {
 			}
 			continue
 		}
+		h.mtx.Lock()
+		h.protocol = bi.Protocol
+		h.nextProtocol = bi.NextProtocol
+		h.mtx.Unlock()
 		var sh *core.ShellHeader
 		sh, err = h.getShellHeader(ctx, bi.Hash)
 		if err != nil {
@@ -152,10 +179,10 @@ func (h *HeadMonitor) serve(ctx context.Context) {
 			continue
 		}
 		var (
-			stream <-chan *client.Head
+			stream <-chan *monitor.Head
 			errCh  <-chan error
 		)
-		stream, errCh, err = h.cfg.Client.Heads(ctx, &client.HeadsRequest{Chain: h.cfg.ChainID.String()})
+		stream, errCh, err = monitor.Heads(ctx, h.cfg.Client, &monitor.HeadsRequest{Chain: h.cfg.ChainID.String()})
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				return
@@ -181,7 +208,25 @@ func (h *HeadMonitor) serve(ctx context.Context) {
 				}
 				status := t.Before(timestamp.Add(minBlockDelay + h.cfg.Tolerance))
 				log.Debugf("%v: %t", t, status)
-				h.status.Store(status)
+
+				var proto *core.BlockProtocols
+				proto, err = block.Protocols(ctx, h.cfg.Client, &block.SimpleRequest{
+					Chain: h.cfg.ChainID.String(),
+					Block: head.Hash.String(),
+				})
+				if err != nil {
+					if errors.Is(err, context.Canceled) {
+						return
+					}
+					break Recv
+				}
+
+				h.mtx.Lock()
+				h.status = status
+				h.protocol = proto.Protocol
+				h.nextProtocol = proto.NextProtocol
+				h.mtx.Unlock()
+
 				v := 0.0
 				if status {
 					v = 1
@@ -193,17 +238,6 @@ func (h *HeadMonitor) serve(ctx context.Context) {
 				}
 
 				// update constant
-				var proto *core.BlockProtocols
-				proto, err = h.cfg.Client.BlockProtocols(ctx, &client.SimpleRequest{
-					Chain: h.cfg.ChainID.String(),
-					Block: head.Hash.String(),
-				})
-				if err != nil {
-					if errors.Is(err, context.Canceled) {
-						return
-					}
-					break Recv
-				}
 				log.WithFields(log.Fields{"block": head.Hash, "proto": proto.Protocol}).Info("protocol upgrade")
 				minBlockDelay, err = h.getMinBlockDelay(ctx, head.Hash.String(), proto.Protocol)
 				if err != nil {

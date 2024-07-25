@@ -10,23 +10,9 @@ The Octez ECAD Sidecar is designed to enhance the reliability of Tezos RPC nodes
 
 The purpose of the `/health` endpoint is to allow health check probes from load balancers. This enables a load balancer to dynamically include or exclude nodes from the group of origin servers. The service is suitable for use with popular load balancer services such as those from Cloudflare, Amazon, and Google.
 
-## Features
+## Metrics
 
-- Provides a `/health` endpoint that returns:
-  - `200 OK` if:
-    - The `bootstrapped` property from the `/chains/<chain_id>/is_bootstrapped` endpoint is `true`.
-    - The `synced` property from the `/chains/<chain_id>/is_bootstrapped` endpoint is `synced`.
-    - A new block has been observed from the `/monitor/heads/<chain_id>` endpoint within `N + minimal_block_delay` seconds.
-  - `500 Internal Server Error` if any of the above conditions fail.
-
-## Implementation Heuristics
-
-- Monitor the `/chains/<chain_id>/is_bootstrapped` endpoint.
-- Check the `bootstrapped` and `synced` properties.
-- Observe new blocks from the `/monitor/heads/<chain_id>` endpoint within a configurable time window.
-- Fetch `minimal_block_delay` from the `/chains/<chain_id>/blocks/head/context/constants` endpoint.
-- Monitor for changes in the protocol and update the `minimal_block_delay` constant from the constants RPC when the protocol changes.
-- Configurable additional time window (`N`, default 10 seconds) added to `minimal_block_delay` for block observation.
+Prometheus metrics are exposed via `/metrics` endpoint.
 
 ## Getting Started
 
@@ -55,18 +41,18 @@ The purpose of the `/health` endpoint is to allow health check probes from load 
 
 The sidecar can be configured via YAML file:
 
-| Field              | Default | Description                                                                       |
-| ------------------ | ------- | --------------------------------------------------------------------------------- |
-| listen             | :8080   | Host and port to listen on                                                        |
-| url                |         | Tezos RPC URL                                                                     |
-| chain_id           |         | Base58 encoded chain id                                                           |
-| timeout            | 30s     | RPC timeout                                                                       |
-| tolerance          | 10s     | The amount of time added to the `minimal_block_delay` value for block observation |
-| reconnect_delay    | 10s     | Delay before reconnection of a head monitor                                       |
-| use_timestamps     | false   | Use blocks' timestamps instead of a system time                                   |
-| check_block_delay  | true    |                                                                                   |
-| check_bootstrapped | true    |                                                                                   |
-| check_sync_state   | true    |                                                                                   |
+| Field                    | Default | Description                                                                       |
+| ------------------------ | ------- | --------------------------------------------------------------------------------- |
+| listen                   | :8080   | Host and port to listen on                                                        |
+| url                      |         | Tezos RPC URL                                                                     |
+| chain_id                 |         | Base58 encoded chain id                                                           |
+| timeout                  | 30s     | RPC timeout                                                                       |
+| tolerance                | 10s     | The amount of time added to the `minimal_block_delay` value for block observation |
+| reconnect_delay          | 10s     | Delay before reconnection of a head monitor                                       |
+| use_timestamps           | false   | Use blocks' timestamps instead of a system time                                   |
+| poll_interval            | 15s     | Interval in whish endpoints are getting polled                                    |
+| health_use_bootstrapped  | true    | If true the bootstrap state is used to produce `/health` output                   |
+| health_use_block_delay   | true    | If true the block delay is used to produce `/health` output                       |
 
 ### Reporting Issues
 

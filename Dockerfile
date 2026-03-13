@@ -1,4 +1,4 @@
-FROM golang:1.22-alpine3.20
+FROM golang:1.24-alpine
 ADD . /octez-ecad-sc
 WORKDIR /octez-ecad-sc
 

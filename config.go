@@ -6,9 +6,15 @@ import (
 	tz "github.com/ecadlabs/gotez/v2"
 )
 
+type NodeConfig struct {
+	Name string `yaml:"name"`
+	URL  string `yaml:"url"`
+}
+
 type Config struct {
 	Listen                string        `yaml:"listen"`
-	URL                   string        `yaml:"url"`
+	Nodes                 []NodeConfig  `yaml:"nodes"`
+	URL                   string        `yaml:"url"` // legacy single-node field
 	ChainID               *tz.ChainID   `yaml:"chain_id"`
 	Timeout               time.Duration `yaml:"timeout"`
 	Tolerance             time.Duration `yaml:"tolerance"`

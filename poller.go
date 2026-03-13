@@ -198,7 +198,11 @@ func (p *Poller) pollMempoolOperations(ctx context.Context, errCh chan<- error) 
 	}
 
 	p.opsGauge.Reset()
-	gauge := p.opsGauge.MustCurryWith(prometheus.Labels{"proto": p.cfg.NextProtocolFunc().String()})
+	proto := p.cfg.NextProtocolFunc()
+	if proto == nil {
+		return // protocol not yet known, skip this poll
+	}
+	gauge := p.opsGauge.MustCurryWith(prometheus.Labels{"proto": proto.String()})
 
 	g := gauge.MustCurryWith(prometheus.Labels{"pool": "validated"})
 	for _, list := range resp.Validated {

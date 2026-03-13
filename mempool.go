@@ -100,7 +100,11 @@ func (h *MempoolMonitor) serve(ctx context.Context) {
 				break Recv
 
 			case resp := <-stream:
-				counter := h.metric.MustCurryWith(prometheus.Labels{"proto": h.cfg.NextProtocolFunc().String()})
+				proto := h.cfg.NextProtocolFunc()
+				if proto == nil {
+					continue // protocol not yet known, skip this batch
+				}
+				counter := h.metric.MustCurryWith(prometheus.Labels{"proto": proto.String()})
 				if log.GetLevel() >= log.DebugLevel {
 					buf, _ := json.MarshalIndent(resp.Contents, "", "    ")
 					log.Debug(string(buf))

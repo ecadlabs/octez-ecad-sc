@@ -41,10 +41,12 @@ func (c *HeadMonitorConfig) New(ctx context.Context) (*HeadMonitor, error) {
 
 	bi, err := m.getBlockInfo(ctx, "head")
 	if err != nil {
-		return nil, err
+		// Non-fatal: serve() will populate protocols on first successful iteration.
+		log.WithError(err).Warn("failed to fetch initial block info, will retry in background")
+	} else {
+		m.protocol = bi.Protocol
+		m.nextProtocol = bi.NextProtocol
 	}
-	m.protocol = bi.Protocol
-	m.nextProtocol = bi.NextProtocol
 
 	return m, nil
 }

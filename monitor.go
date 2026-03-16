@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"sync"
 	"time"
 
@@ -41,10 +42,12 @@ func (c *HeadMonitorConfig) New(ctx context.Context) (*HeadMonitor, error) {
 
 	bi, err := m.getBlockInfo(ctx, "head")
 	if err != nil {
-		return nil, err
+		// Non-fatal: serve() will populate protocols on first successful iteration.
+		log.WithError(err).Warn("failed to fetch initial block info, will retry in background")
+	} else {
+		m.protocol = bi.Protocol
+		m.nextProtocol = bi.NextProtocol
 	}
-	m.protocol = bi.Protocol
-	m.nextProtocol = bi.NextProtocol
 
 	return m, nil
 }
@@ -133,8 +136,14 @@ func (h *HeadMonitor) serve(ctx context.Context) {
 		h.mtx.Unlock()
 		h.metric.Set(0)
 		if err != nil {
-			log.Error(err)
-			t := time.After(h.cfg.ReconnectDelay)
+			delay := h.cfg.ReconnectDelay
+			if errors.Is(err, io.EOF) {
+				log.WithError(err).Debug("head monitor stream closed, reconnecting")
+				delay = 0
+			} else {
+				log.WithError(err).Error("head monitor error")
+			}
+			t := time.After(delay)
 			select {
 			case <-t:
 			case <-ctx.Done():

@@ -12,8 +12,8 @@ import (
 	"github.com/ecadlabs/gotez/v2/clientv2/mempool"
 	"github.com/ecadlabs/gotez/v2/clientv2/network"
 	"github.com/ecadlabs/gotez/v2/clientv2/utils"
+	"github.com/ecadlabs/gotez/v2/protocol/core"
 	"github.com/ecadlabs/gotez/v2/protocol/latest"
-	"github.com/ecadlabs/gotez/v2/protocol/proto_016_PtMumbai"
 	"github.com/prometheus/client_golang/prometheus"
 	log "github.com/sirupsen/logrus"
 )
@@ -178,7 +178,7 @@ func (p *Poller) pollConnections(ctx context.Context, errCh chan<- error) {
 	}
 }
 
-func updatePool(g *prometheus.GaugeVec, list []*proto_016_PtMumbai.OperationWithoutMetadata[latest.OperationContents]) {
+func updatePool(g *prometheus.GaugeVec, list []*core.OperationWithoutMetadata[latest.OperationContents]) {
 	for _, grp := range list {
 		for _, op := range grp.Operations() {
 			g.With(prometheus.Labels{"kind": op.OperationKind()}).Inc()
@@ -198,7 +198,11 @@ func (p *Poller) pollMempoolOperations(ctx context.Context, errCh chan<- error) 
 	}
 
 	p.opsGauge.Reset()
-	gauge := p.opsGauge.MustCurryWith(prometheus.Labels{"proto": p.cfg.NextProtocolFunc().String()})
+	proto := p.cfg.NextProtocolFunc()
+	if proto == nil {
+		return // protocol not yet known, skip this poll
+	}
+	gauge := p.opsGauge.MustCurryWith(prometheus.Labels{"proto": proto.String()})
 
 	g := gauge.MustCurryWith(prometheus.Labels{"pool": "validated"})
 	for _, list := range resp.Validated {

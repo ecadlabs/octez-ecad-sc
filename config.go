@@ -6,9 +6,15 @@ import (
 	tz "github.com/ecadlabs/gotez/v2"
 )
 
+type NodeConfig struct {
+	Name string `yaml:"name"`
+	URL  string `yaml:"url"`
+}
+
 type Config struct {
 	Listen                string        `yaml:"listen"`
-	URL                   string        `yaml:"url"`
+	Nodes                 []NodeConfig  `yaml:"nodes"`
+	URL                   string        `yaml:"url"` // legacy single-node field
 	ChainID               *tz.ChainID   `yaml:"chain_id"`
 	Timeout               time.Duration `yaml:"timeout"`
 	Tolerance             time.Duration `yaml:"tolerance"`
@@ -17,4 +23,5 @@ type Config struct {
 	PollInterval          time.Duration `yaml:"poll_interval"`
 	HealthUseBootstrapped bool          `yaml:"health_use_bootstrapped"`
 	HealthUseBlockDelay   bool          `yaml:"health_use_block_delay"`
+	MinHealthyNodes       int           `yaml:"min_healthy_nodes"`
 }

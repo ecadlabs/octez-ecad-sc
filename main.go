@@ -61,6 +61,7 @@ func main() {
 		HealthUseBlockDelay:   true,
 		HealthUseBootstrapped: true,
 		PollInterval:          defaultPollInterval,
+		MinHealthyNodes:       1,
 	}
 
 	buf, err := os.ReadFile(*confPath)
@@ -151,9 +152,9 @@ func main() {
 
 	r := mux.NewRouter()
 
-	// /health: 200 if at least one node is healthy.
+	// /health: 200 if the number of healthy nodes meets min_healthy_nodes threshold.
 	r.Methods("GET").Path("/health").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		anyHealthy := false
+		healthyCount := 0
 		for _, inst := range instances {
 			ok := true
 			if conf.HealthUseBootstrapped {
@@ -164,17 +165,17 @@ func main() {
 				ok = ok && inst.hmon.Status()
 			}
 			if ok {
-				anyHealthy = true
-				break
+				healthyCount++
 			}
 		}
+		healthy := healthyCount >= conf.MinHealthyNodes
 		code := http.StatusInternalServerError
-		if anyHealthy {
+		if healthy {
 			code = http.StatusOK
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(code)
-		json.NewEncoder(w).Encode(anyHealthy)
+		json.NewEncoder(w).Encode(healthy)
 	})
 
 	// /sync_status: per-node bootstrap/sync state map; 200 if any node is healthy.

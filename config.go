@@ -23,4 +23,5 @@ type Config struct {
 	PollInterval          time.Duration `yaml:"poll_interval"`
 	HealthUseBootstrapped bool          `yaml:"health_use_bootstrapped"`
 	HealthUseBlockDelay   bool          `yaml:"health_use_block_delay"`
+	MinHealthyNodes       int           `yaml:"min_healthy_nodes"`
 }

@@ -10,6 +10,8 @@ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/ecadlabs/gotez/v2 v2.4.3 h1:1541+i6qR5gD06zbnWhRqeb6/1HBL9rIWOAnmYn7MT0=
 github.com/ecadlabs/gotez/v2 v2.4.3/go.mod h1:7nikOJohXAyRk0AQDzMKfa/bRrRrA4DybgUb2edwkF0=
+github.com/ecadlabs/gotez/v2 v2.4.4-0.20260316213540-c6181a54ed2f h1:7qVlJSYltenSgOa2OLPnjXe5jtqMerS7+yRyv05XZDs=
+github.com/ecadlabs/gotez/v2 v2.4.4-0.20260316213540-c6181a54ed2f/go.mod h1:7nikOJohXAyRk0AQDzMKfa/bRrRrA4DybgUb2edwkF0=
 github.com/ecadlabs/pretty v0.0.0-20230412124801-f948fc689a04 h1:7WdblGykGxtGGtchW4kzTaJJO8Fm+JKhLzhttOOWr9k=
 github.com/ecadlabs/pretty v0.0.0-20230412124801-f948fc689a04/go.mod h1:VApUlocsLMpp4hUXHxTTIlosebnwo0BM6e1hy78qTPM=
 github.com/google/go-cmp v0.6.0 h1:ofyhxvXcZhMsU5ulbFiLKl/XBFqE1GSq7atu8tAmTRI=

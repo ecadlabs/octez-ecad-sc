@@ -3,7 +3,7 @@ module github.com/ecadlabs/octez-ecad-sc
 go 1.24.0
 
 require (
-	github.com/ecadlabs/gotez/v2 v2.4.3
+	github.com/ecadlabs/gotez/v2 v2.4.4-0.20260316213540-c6181a54ed2f
 	github.com/gorilla/mux v1.8.1
 	github.com/prometheus/client_golang v1.19.1
 	github.com/sirupsen/logrus v1.9.3

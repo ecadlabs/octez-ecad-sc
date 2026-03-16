@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"sync"
 	"time"
 
@@ -135,8 +136,14 @@ func (h *HeadMonitor) serve(ctx context.Context) {
 		h.mtx.Unlock()
 		h.metric.Set(0)
 		if err != nil {
-			log.Error(err)
-			t := time.After(h.cfg.ReconnectDelay)
+			delay := h.cfg.ReconnectDelay
+			if errors.Is(err, io.EOF) {
+				log.WithError(err).Debug("head monitor stream closed, reconnecting")
+				delay = 0
+			} else {
+				log.WithError(err).Error("head monitor error")
+			}
+			t := time.After(delay)
 			select {
 			case <-t:
 			case <-ctx.Done():
